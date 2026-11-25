@@ -11,7 +11,8 @@ load_dotenv()
 class Settings:
     at_username: str = os.getenv("AT_USERNAME", "sandbox")
     at_api_key: str = os.getenv("AT_API_KEY", "")
-    at_shortcode: str = os.getenv("AT_SHORTCODE", "")
+    # Sender ID for outbound SMS (sandbox default: AFTKNG). AT_SHORTCODE kept as a fallback.
+    at_sender_id: str = os.getenv("AT_SENDER_ID") or os.getenv("AT_SHORTCODE", "")
     at_ussd_code: str = os.getenv("AT_USSD_CODE", "")
     database_url: str = os.getenv("DATABASE_URL", "sqlite:///./bakishule.db")
     dry_run: bool = os.getenv("DRY_RUN", "true").lower() == "true"

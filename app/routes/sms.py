@@ -8,6 +8,7 @@ from app.db import get_db
 from app.models import Intervention, Learner, ParentReply, utc_now_naive
 from app.services.clock import demo_today
 from app.services.escalation import _log_send, maybe_escalate
+from app.services.phone import normalize_number
 from app.services.risk import recompute_learner
 
 router = APIRouter()
@@ -103,7 +104,7 @@ def handle_inbound_sms(db: Session, sender: str, raw_text: str) -> int:
 @router.post("/sms/inbound")
 async def inbound_sms_callback(request: Request, db: Session = Depends(get_db)) -> dict[str, str]:
     form = await request.form()
-    sender = str(form.get("from", ""))
+    sender = normalize_number(str(form.get("from", "")))
     raw_text = str(form.get("text", ""))
     handle_inbound_sms(db, sender, raw_text)
     return {"status": "ok"}

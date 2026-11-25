@@ -48,7 +48,7 @@ Run the tests:
 |---|---|---|
 | `AT_USERNAME` | Africa's Talking app username; use `sandbox` for sandbox | `sandbox` |
 | `AT_API_KEY` | Sandbox API key from the AT app dashboard | empty |
-| `AT_SHORTCODE` | Optional registered SMS sender ID / shortcode | empty |
+| `AT_SENDER_ID` | SMS sender ID (`AFTKNG` in sandbox). `AT_SHORTCODE` is still read as a fallback | `AFTKNG` |
 | `AT_USSD_CODE` | Code assigned to the USSD product in AT | empty |
 | `DATABASE_URL` | SQLAlchemy database URL | `sqlite:///./bakishule.db` |
 | `DRY_RUN` | Log outbound SMS/Airtime/Mobile Data instead of sending | `true` |
@@ -65,7 +65,8 @@ Run the tests:
 The official Python SDK was checked at install time (`africastalking` 2.0.3):
 
 - `africastalking.initialize(username, api_key)`.
-- SMS: `SMS.send(message, recipients, sender_id=None, enqueue=False, ...)`.
+- SMS: `SMS.send(message, recipients, sender_id=None, enqueue=False, ...)` — note the keyword is `sender_id`, not `sender`. Errors raise `africastalking.Service.AfricasTalkingException`; the adapter catches it (and network/invalid-number errors) and returns `{"status": "failed", "error": ..., "details": ...}`.
+- Phone numbers are normalized to E.164 (`0707…`, `254707…`, `00254707…` → `+254707…`) before sending and on inbound USSD/SMS lookups (`app/services/phone.py`).
 - Airtime: `Airtime.send(phone_number=..., amount=..., currency_code=...)`.
 - Mobile Data: `MobileData.send(product_name, recipients, ...)`, where a recipient uses `phoneNumber`, `quantity`, `unit`, and `validity`.
 - The SDK package has no Payments service export. Payments therefore use the `PaymentService` interface and `MockPaymentService`; no payment is charged.
@@ -74,28 +75,45 @@ The AT developer documentation pages returned HTTP 403 to this build environment
 
 ### Configure the AT console
 
-1. Create/open a **Sandbox** app and copy its API key into `AT_API_KEY`; keep `AT_USERNAME=sandbox`.
-2. Expose the local server with ngrok:
+1. Create/open a **Sandbox** app and copy its API key into `AT_API_KEY`; keep `AT_USERNAME=sandbox` and `AT_SENDER_ID=AFTKNG`.
+2. Check SMS credentials (set `DRY_RUN=false` first; add the recipient to the sandbox simulator so you can see the message):
+
+   ```bash
+   .venv/bin/python -m scripts.send_test_sms 0707274525 "Hello from BakiShule"
+   ```
+
+   Prints the AT JSON response, or `{"status": "failed", ...}` with details (e.g. invalid key, blacklisted number).
+3. Expose the local server with ngrok, copy the HTTPS URL, and **open it once in your browser** (ngrok free tier shows an interstitial page that can otherwise block AT callbacks):
 
    ```bash
    ngrok http 8000
    ```
 
-3. In the AT sandbox **USSD** product, set its callback URL to:
+4. In the AT sandbox **USSD** product (USSD → Create channel), set its callback URL to the exact path — **no trailing slash**:
 
    ```text
    https://YOUR-NGROK-DOMAIN/ussd
    ```
 
-   Use `POST` / form-urlencoded. The app reads `sessionId`, `serviceCode`, `phoneNumber`, and `text`, and returns a plain-text `CON ...` or `END ...` response.
-4. In the sandbox **SMS inbound / callback** settings, set:
+   Use `POST` / form-urlencoded. The app reads `sessionId`, `serviceCode`, `phoneNumber`, and `text`, and returns a plain-text `CON ...` (continue) or `END ...` (finish) response. Responses must come back within ~3 seconds or the sandbox drops the session. Put the assigned code in `AT_USSD_CODE`.
+
+   Test it through ngrok before using the simulator:
+
+   ```bash
+   curl -X POST https://YOUR-NGROK-DOMAIN/ussd \
+     -d "sessionId=12345" -d "serviceCode=*384#" \
+     -d "phoneNumber=+254700000001" -d "text="
+   # → CON BakiShule
+   #   1. Mark attendance ...
+   ```
+5. In the sandbox **SMS inbound / callback** settings, set:
 
    ```text
    https://YOUR-NGROK-DOMAIN/sms/inbound
    ```
 
    The route reads `from` and `text`, accepts replies `1`, `2`, `3`, other text, and `STOP` / `START`, then returns HTTP 200.
-5. In your app's USSD simulator, dial the code assigned by AT (`AT_USSD_CODE`), and use the exact `DEMO_TEACHER_PHONE` value as the simulated caller. Set the simulator's guardian sender to `DEMO_PARENT_PHONE` when testing inbound SMS. The seeded teacher's attendance class is `5A`; the seeded parent is attached to learner 01.
+6. In your app's USSD simulator, dial the code assigned by AT (`AT_USSD_CODE`), and use the exact `DEMO_TEACHER_PHONE` value as the simulated caller. Set the simulator's guardian sender to `DEMO_PARENT_PHONE` when testing inbound SMS. The seeded teacher's attendance class is `5A`; the seeded parent is attached to learner 01.
 
 Do not set `DRY_RUN=false` until you have confirmed the Sandbox app, sender ID, simulator phone numbers, and available sandbox services. The sandbox API key remains private in `.env`.
 

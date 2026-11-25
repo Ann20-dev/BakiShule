@@ -1,7 +1,11 @@
 import logging
 from typing import Any
 
+from africastalking.Service import AfricasTalkingException
+from requests import RequestException
+
 from app.config import settings
+from app.services.phone import normalize_number
 
 logger = logging.getLogger(__name__)
 
@@ -18,13 +22,22 @@ class AfricaTalkingClient:
             self._sdk = africastalking
 
     def send_sms(self, phone: str, message: str) -> dict:
+        phone = normalize_number(phone)
         if settings.dry_run:
             logger.info("DRY_RUN SMS to %s: %s", phone, message)
             return {"status": "mocked", "dry_run": True}
         service = self._sdk.SMS
-        if settings.at_shortcode:
-            return service.send(message, [phone], sender_id=settings.at_shortcode)
-        return service.send(message, [phone])
+        try:
+            if settings.at_sender_id:
+                response = service.send(message, [phone], sender_id=settings.at_sender_id)
+            else:
+                response = service.send(message, [phone])
+        except (AfricasTalkingException, RequestException, ValueError) as error:
+            logger.warning("SMS to %s failed: %s", phone, error)
+            return {"status": "failed", "error": "SMS delivery failed", "details": str(error)}
+        if not isinstance(response, dict):
+            return {"status": "submitted", "raw": str(response)}
+        return response
 
     def send_airtime(self, phone: str, amount: int, currency_code: str = "KES") -> dict:
         if settings.dry_run:

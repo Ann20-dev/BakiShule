@@ -10,6 +10,7 @@ from app.db import get_db
 from app.models import AttendanceRecord, ClassRoom, RiskSnapshot, Teacher
 from app.services.attendance import save_class_attendance
 from app.services.clock import demo_today
+from app.services.phone import normalize_number
 
 router = APIRouter()
 
@@ -21,7 +22,7 @@ def _class_selection(classes: list[ClassRoom], action: str) -> str:
 
 
 def handle_ussd(db: Session, phone_number: str, text: str) -> str:
-    teacher = db.scalar(select(Teacher).where(Teacher.phone == phone_number))
+    teacher = db.scalar(select(Teacher).where(Teacher.phone == normalize_number(phone_number)))
     if not teacher:
         return "END Number not registered. Contact your school admin."
 

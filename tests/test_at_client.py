@@ -19,7 +19,7 @@ def test_dry_run_uses_mocked_responses_without_sdk_calls(monkeypatch):
             dry_run=True,
             at_api_key="",
             at_username="sandbox",
-            at_shortcode="",
+            at_sender_id="",
         ),
     )
     client = AfricaTalkingClient()
@@ -56,7 +56,7 @@ def test_live_adapter_maps_arguments_to_sdk_services(monkeypatch):
             dry_run=False,
             at_api_key="synthetic-key",
             at_username="sandbox",
-            at_shortcode="BAKISHULE",
+            at_sender_id="BAKISHULE",
         ),
     )
     client = AfricaTalkingClient()
@@ -97,9 +97,47 @@ def test_live_adapter_requires_api_key(monkeypatch):
             dry_run=False,
             at_api_key="",
             at_username="sandbox",
-            at_shortcode="",
+            at_sender_id="",
         ),
     )
 
     with pytest.raises(RuntimeError, match="AT_API_KEY is required"):
         AfricaTalkingClient()
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("0707274525", "+254707274525"),
+        ("0707 274-525", "+254707274525"),
+        ("254707274525", "+254707274525"),
+        ("00254707274525", "+254707274525"),
+        ("+254707274525", "+254707274525"),
+        ("707274525", "+707274525"),
+    ],
+)
+def test_normalize_number(raw, expected):
+    from app.services.phone import normalize_number
+
+    assert normalize_number(raw) == expected
+
+
+def test_send_sms_normalizes_and_returns_failure_on_sdk_error(monkeypatch):
+    from africastalking.Service import AfricasTalkingException
+
+    sdk = ModuleType("africastalking")
+    sdk.initialize = Mock()
+    sdk.SMS = SimpleNamespace(send=Mock(side_effect=AfricasTalkingException("blacklisted")))
+    monkeypatch.setitem(sys.modules, "africastalking", sdk)
+    monkeypatch.setattr(
+        at_client_module,
+        "settings",
+        SimpleNamespace(dry_run=False, at_api_key="k", at_username="sandbox", at_sender_id="AFTKNG"),
+    )
+    client = AfricaTalkingClient()
+
+    result = client.send_sms("0707274525", "Hi")
+
+    assert result["status"] == "failed"
+    assert result["details"] == "blacklisted"
+    sdk.SMS.send.assert_called_once_with("Hi", ["+254707274525"], sender_id="AFTKNG")
