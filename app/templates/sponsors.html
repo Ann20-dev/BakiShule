@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Sponsor support · BakiShule{% endblock %}
+{% block content %}
+<section class="page-heading"><div><p class="eyebrow">COMMUNITY SUPPORT</p><h1>Sponsor a learner</h1><p class="muted">Only learners with an open sponsor flag appear here. Names stay anonymised until consent is recorded.</p></div></section>
+<section class="sponsor-grid">
+  <div id="sponsor-cards" hx-get="/partials/sponsors" hx-trigger="every 10s" hx-swap="innerHTML">
+    {% include "sponsor_cards.html" %}
+  </div>
+</section>
+{% endblock %}

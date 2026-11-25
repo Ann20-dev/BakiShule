@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Overview · BakiShule{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div><p class="eyebrow">{{ today.strftime("%A, %d %B %Y") }}</p><h1>School overview</h1>
+    <p class="muted">Attendance signals, early support, and learner wellbeing in one place.</p></div>
+  <a class="button secondary" href="/at-risk">Review at-risk learners →</a>
+</section>
+<section id="live-summary" hx-get="/partials/summary" hx-trigger="every 10s" hx-swap="innerHTML">
+  {% include "summary_partial.html" %}
+</section>
+<section class="two-col">
+  <article class="panel">
+    <div class="panel-heading"><div><h2>Attendance trend</h2><p class="muted">Daily school attendance · 30 days</p></div></div>
+    <div class="chart-wrap"><canvas id="attendance-chart" aria-label="Attendance trend chart"></canvas></div>
+  </article>
+  <article class="panel">
+    <div class="panel-heading"><div><h2>Class attendance heatmap</h2><p class="muted">Percent present, latest 7 days</p></div></div>
+    <div class="table-wrap">
+      <table class="heatmap">
+        <thead><tr><th>Class</th>{% for day in dates %}<th>{{ day.strftime("%a") }}<br><small>{{ day.strftime("%d") }}</small></th>{% endfor %}</tr></thead>
+        <tbody>
+        {% for row in heatmap %}
+          <tr><th>{{ row["classroom"] }}</th>{% for value in row["values"] %}
+          <td class="{% if value is not none and value >= 90 %}heat-good{% elif value is not none and value >= 75 %}heat-mid{% elif value is not none %}heat-low{% endif %}">{{ (value|string + "%") if value is not none else "—" }}</td>
+          {% endfor %}</tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+</section>
+{% if demo_mode %}
+<section class="panel demo-panel">
+  <div class="panel-heading"><div><h2>Demo controls</h2><p class="muted">Only available while DEMO_MODE=true.</p></div><span class="badge watch">DEMO</span></div>
+  <div class="demo-actions">
+    <form method="post" action="/demo/advance"><button class="button secondary">Advance 1 day</button></form>
+    <form method="post" action="/demo/recompute"><button class="button secondary">Recompute risk</button></form>
+    <form method="post" action="/demo/streak" class="inline-form">
+      <label for="streak-learner">Simulate 4-week streak</label>
+      <select id="streak-learner" name="learner_id" required>
+        {% for learner in learners %}<option value="{{ learner.id }}">{{ learner.name }} · {{ learner.classroom.name }}</option>{% endfor %}
+      </select>
+      <button class="button primary">Run simulation</button>
+    </form>
+    <form method="post" action="/demo/reset" onsubmit="return confirm('Reset all local demo data?')"><button class="button danger">Reset demo data</button></form>
+  </div>
+</section>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+new Chart(document.getElementById("attendance-chart"), {
+  type: "line",
+  data: {
+    labels: {{ trend_labels|tojson }},
+    datasets: [{label: "Attendance %", data: {{ trend_rates|tojson }},
+      borderColor: "#168a70", backgroundColor: "rgba(22,138,112,.12)",
+      fill: true, tension: .32, pointRadius: 2}]
+  },
+  options: {responsive: true, maintainAspectRatio: false, scales: {y: {min: 0, max: 100}}}
+});
+</script>
+{% endblock %}

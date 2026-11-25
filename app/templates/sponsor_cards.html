@@ -1,0 +1,14 @@
+{% for profile in profiles %}
+  <article class="panel sponsor-card">
+    <div class="sponsor-top"><span class="badge critical">SUPPORT NEEDED</span><span>{{ profile.county }}</span></div>
+    <h2>{{ profile.name }}</h2>
+    <p class="muted">{{ profile.classroom }} · {{ profile.need }}</p>
+    {% if profile.score is not none %}<p>Risk score <strong>{{ profile.score }}/100</strong></p>{% endif %}
+    <p class="privacy-note">{% if profile.consented %}Guardian consent recorded.{% else %}Identity withheld pending guardian consent.{% endif %}</p>
+    <form method="post" action="/sponsors/{{ profile.id }}/pay">
+      <button class="button primary">Sponsor KES 3,000 <span class="muted-light">(demo)</span></button>
+    </form>
+  </article>
+{% else %}
+  <article class="panel empty">No learners are currently flagged for sponsor support.</article>
+{% endfor %}

@@ -1,0 +1,11 @@
+<div class="metric-grid">
+  <article class="metric"><span>Learners</span><strong>{{ learner_count }}</strong></article>
+  <article class="metric"><span>Today's attendance</span><strong>{{ attendance_rate }}%</strong></article>
+  <article class="metric"><span>Watch</span><strong class="watch-text">{{ risk_counts.watch }}</strong></article>
+  <article class="metric"><span>At risk / critical</span><strong class="risk-text">{{ risk_counts.at_risk + risk_counts.critical }}</strong></article>
+</div>
+<div class="level-strip">
+  {% for level, count in risk_counts.items() %}
+  <span class="badge {{ level }}">{{ level|replace('_', ' ') }} · {{ count }}</span>
+  {% endfor %}
+</div>

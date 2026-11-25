@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}{{ learner.name }} · BakiShule{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div><p class="eyebrow">{{ learner.classroom.school.name }} · {{ learner.classroom.name }}</p><h1>{{ learner.name }}</h1><p class="muted">Roll {{ learner.roll_number }} · Guardian {{ learner.guardian_name }}</p></div>
+  <a class="button secondary" href="/at-risk">← At-risk list</a>
+</section>
+{% set latest = learner.risks|sort(attribute="date", reverse=true)|first %}
+<section class="metric-grid">
+  <article class="metric"><span>Current risk</span><strong>{{ latest.score if latest else "—" }}<small>/100</small></strong></article>
+  <article class="metric"><span>Level</span><strong><span class="badge {{ latest.level if latest else 'green' }}">{{ latest.level if latest else "not scored" }}</span></strong></article>
+  <article class="metric"><span>Guardian contact</span><strong class="compact">{{ learner.guardian_phone }}</strong></article>
+</section>
+<section class="two-col">
+  <article class="panel">
+    <h2>Why this score?</h2>
+    <ul class="reason-list">
+      {% if latest %}{% for reason in latest.reasons %}<li>{{ reason }}</li>{% else %}<li>No risk reasons recorded.</li>{% endfor %}
+      {% else %}<li>No risk reasons recorded.</li>{% endif %}
+    </ul>
+    <h3>Attendance · last 60 records</h3>
+    <div class="attendance-calendar">{% for record in attendance|reverse %}
+      <div class="day-cell {{ 'present' if record.present else 'absent' }}" title="{{ record.date }}: {{ 'Present' if record.present else 'Absent' }}">
+        <small>{{ record.date.strftime("%d") }}</small><span>{{ "P" if record.present else "A" }}</span>
+      </div>
+    {% endfor %}</div>
+  </article>
+  <article class="panel">
+    <h2>Risk score history</h2><div class="chart-wrap"><canvas id="risk-chart" aria-label="Risk history chart"></canvas></div>
+    <h3>Parent replies</h3>
+    {% for reply in replies %}<p class="timeline-item"><strong>{{ reply.received_at.strftime("%d %b %H:%M") }}</strong> · {{ reply.raw_text }}</p>{% else %}<p class="muted">No replies yet.</p>{% endfor %}
+  </article>
+</section>
+<section class="panel">
+  <h2>Intervention timeline</h2>
+  <div class="timeline">
+    {% for item in interventions %}
+    <article class="timeline-item"><span class="badge {{ 'watch' if item.status in ['open', 'created'] else 'green' }}">{{ item.status }}</span>
+      <strong>{{ item.type|replace("_", " ") }}</strong><time>{{ item.created_at.strftime("%d %b %Y %H:%M") }}</time>
+      <p>{{ item.metadata_json.get("message", item.metadata_json.get("need", item.metadata_json.get("amount", ""))) }}</p>
+    </article>
+    {% else %}<p class="muted">No interventions recorded.</p>{% endfor %}
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+new Chart(document.getElementById("risk-chart"), {
+  type: "line",
+  data: {labels: {{ risks|map(attribute="date")|map("string")|list|tojson }},
+    datasets: [{label: "Risk score", data: {{ risks|map(attribute="score")|list|tojson }},
+      borderColor: "#dc785d", backgroundColor: "rgba(220,120,93,.12)", fill: true, tension: .25}]},
+  options: {responsive: true, maintainAspectRatio: false, scales: {y: {min: 0, max: 100}}}
+});
+</script>
+{% endblock %}

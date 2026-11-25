@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}At-risk learners · BakiShule{% endblock %}
+{% block content %}
+<section class="page-heading"><div><p class="eyebrow">EARLY SUPPORT</p><h1>At-risk learners</h1><p class="muted">Sort by score, learner, or class. Select a learner to see their history.</p></div></section>
+<section class="panel">
+  <div class="sort-links">Sort:
+    <a href="/at-risk?sort=score">Highest score</a><a href="/at-risk?sort=name">Name</a><a href="/at-risk?sort=class">Class</a>
+  </div>
+  <p class="table-scroll-hint muted">Swipe horizontally to see parent replies and learner details.</p>
+  <div id="risk-table" hx-get="/partials/at-risk?sort={{ sort }}" hx-trigger="every 10s" hx-swap="innerHTML">
+    {% include "at_risk_table.html" %}
+  </div>
+</section>
+{% endblock %}

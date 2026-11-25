@@ -1,0 +1,105 @@
+import sys
+from types import ModuleType, SimpleNamespace
+from unittest.mock import Mock
+
+import pytest
+
+import app.services.at_client as at_client_module
+from app.services.at_client import AfricaTalkingClient
+
+
+def test_dry_run_uses_mocked_responses_without_sdk_calls(monkeypatch):
+    sdk = ModuleType("africastalking")
+    sdk.initialize = Mock()
+    monkeypatch.setitem(sys.modules, "africastalking", sdk)
+    monkeypatch.setattr(
+        at_client_module,
+        "settings",
+        SimpleNamespace(
+            dry_run=True,
+            at_api_key="",
+            at_username="sandbox",
+            at_shortcode="",
+        ),
+    )
+    client = AfricaTalkingClient()
+
+    assert client.send_sms("+254700000001", "Test") == {
+        "status": "mocked",
+        "dry_run": True,
+    }
+    assert client.send_airtime("+254700000001", 20) == {
+        "status": "mocked",
+        "dry_run": True,
+    }
+    assert client.send_mobile_data("demo", "+254700000001", 1, "GB", "Month") == {
+        "status": "mocked",
+        "dry_run": True,
+    }
+    sdk.initialize.assert_not_called()
+
+
+def test_live_adapter_maps_arguments_to_sdk_services(monkeypatch):
+    sdk = ModuleType("africastalking")
+    sdk.initialize = Mock()
+    sms_response = {"SMSMessageData": {"Recipients": []}}
+    airtime_response = {"errorMessage": "None", "numSent": 1}
+    data_response = {"status": "success"}
+    sdk.SMS = SimpleNamespace(send=Mock(return_value=sms_response))
+    sdk.Airtime = SimpleNamespace(send=Mock(return_value=airtime_response))
+    sdk.MobileData = SimpleNamespace(send=Mock(return_value=data_response))
+    monkeypatch.setitem(sys.modules, "africastalking", sdk)
+    monkeypatch.setattr(
+        at_client_module,
+        "settings",
+        SimpleNamespace(
+            dry_run=False,
+            at_api_key="synthetic-key",
+            at_username="sandbox",
+            at_shortcode="BAKISHULE",
+        ),
+    )
+    client = AfricaTalkingClient()
+
+    assert client.send_sms("+254700000001", "Check-in") is sms_response
+    assert client.send_airtime("+254700000001", 20) is airtime_response
+    assert client.send_mobile_data(
+        "demo-bundle", "+254700000001", 1.5, "GB", "Month"
+    ) is data_response
+
+    sdk.initialize.assert_called_once_with("sandbox", "synthetic-key")
+    sdk.SMS.send.assert_called_once_with(
+        "Check-in", ["+254700000001"], sender_id="BAKISHULE"
+    )
+    sdk.Airtime.send.assert_called_once_with(
+        phone_number="+254700000001",
+        amount="20",
+        currency_code="KES",
+    )
+    sdk.MobileData.send.assert_called_once_with(
+        "demo-bundle",
+        [
+            {
+                "phoneNumber": "+254700000001",
+                "quantity": 1.5,
+                "unit": "GB",
+                "validity": "Month",
+            }
+        ],
+    )
+
+
+def test_live_adapter_requires_api_key(monkeypatch):
+    monkeypatch.setattr(
+        at_client_module,
+        "settings",
+        SimpleNamespace(
+            dry_run=False,
+            at_api_key="",
+            at_username="sandbox",
+            at_shortcode="",
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="AT_API_KEY is required"):
+        AfricaTalkingClient()
