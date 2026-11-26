@@ -9,7 +9,19 @@
 <section class="metric-grid">
   <article class="metric"><span>Current risk</span><strong>{{ latest.score if latest else "—" }}<small>/100</small></strong></article>
   <article class="metric"><span>Level</span><strong><span class="badge {{ latest.level if latest else 'green' }}">{{ latest.level if latest else "not scored" }}</span></strong></article>
-  <article class="metric"><span>Guardian contact</span><strong class="compact">{{ learner.guardian_phone }}</strong></article>
+  <article class="metric"><span>Guardian contact</span><strong class="compact">{{ learner.guardian_phone }}</strong>
+    <form method="post" action="/guardians/language" class="lang-form">
+      <input type="hidden" name="phone" value="{{ learner.guardian_phone }}">
+      <input type="hidden" name="back" value="/learners/{{ learner.id }}">
+      <label for="guardian-lang">Language</label>
+      <select id="guardian-lang" name="language" onchange="this.form.submit()">
+        <option value="" {{ "selected" if not guardian_language }}>Not chosen yet</option>
+        {% for code, label in languages.items() %}<option value="{{ code }}" {{ "selected" if guardian_language == code }}>{{ label }}</option>{% endfor %}
+      </select>
+      <noscript><button class="button secondary">Save</button></noscript>
+    </form>
+  </article>
+  <article class="metric"><span>Behaviour notes</span><strong class="compact">⭐ {{ behaviour|selectattr("sentiment", "equalto", "positive")|list|length }} · ⚠️ {{ behaviour|selectattr("sentiment", "equalto", "concern")|list|length }}</strong></article>
 </section>
 <section class="two-col">
   <article class="panel">
@@ -32,14 +44,24 @@
   </article>
 </section>
 <section class="panel">
-  <h2>Intervention timeline</h2>
+  <h2>Timeline</h2>
+  <p class="muted">Interventions, messages and behaviour notes, newest first.</p>
   <div class="timeline">
-    {% for item in interventions %}
-    <article class="timeline-item"><span class="badge {{ 'watch' if item.status in ['open', 'created'] else 'green' }}">{{ item.status }}</span>
+    {% for entry in timeline %}{% set item = entry.item %}
+    {% if entry.kind == "behaviour" %}
+    <article class="timeline-item behaviour {{ item.sentiment }}">
+      <span class="badge {{ 'green' if item.sentiment == 'positive' else 'watch' }}">{{ "⭐ positive" if item.sentiment == "positive" else "⚠️ concern" }}</span>
+      <strong>{{ entry.label }}</strong>{% if item.subject %} · {{ item.subject }}{% endif %}
+      <time>{{ item.date.strftime("%d %b %Y") }}</time>
+      <p>Logged by {{ item.teacher.name if item.teacher else "teacher" }} via USSD</p>
+    </article>
+    {% else %}
+    <article class="timeline-item"><span class="badge {{ 'watch' if item.status in ['open', 'created'] else 'critical' if item.status == 'failed' else 'green' }}">{{ item.status }}</span>
       <strong>{{ item.type|replace("_", " ") }}</strong><time>{{ item.created_at.strftime("%d %b %Y %H:%M") }}</time>
       <p>{{ item.metadata_json.get("message", item.metadata_json.get("need", item.metadata_json.get("amount", ""))) }}</p>
     </article>
-    {% else %}<p class="muted">No interventions recorded.</p>{% endfor %}
+    {% endif %}
+    {% else %}<p class="muted">Nothing recorded yet.</p>{% endfor %}
   </div>
 </section>
 {% endblock %}

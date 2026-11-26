@@ -74,3 +74,21 @@ select { max-width: 230px; padding: 9px 10px; border: 1px solid var(--line); bor
   .two-col { grid-template-columns: 1fr; }.panel { padding: 16px; }.chart-wrap { height: 220px; }
   .attendance-calendar { grid-template-columns: repeat(7, 1fr); }.demo-actions { align-items: stretch; flex-direction: column; }.demo-actions form,.demo-actions .button { width: 100%; }
 }
+
+/* Parent queries panel */
+.convo-list { display: grid; gap: 10px; max-height: 560px; overflow-y: auto; }
+.convo { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.convo header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; }
+.convo header time { margin-left: auto; color: var(--muted); font-size: 11px; }
+.convo .tag { font-size: 10px; font-weight: 700; letter-spacing: .04em; padding: 2px 6px; border-radius: 4px; background: #eef3f2; color: var(--muted); }
+.bubble { white-space: pre-line; font-size: 13px; line-height: 1.4; padding: 8px 10px; border-radius: 10px; margin: 8px 0 0; max-width: 520px; overflow-wrap: anywhere; }
+.bubble.in { background: #eef3f2; }
+.bubble.out { background: #e2f4ed; margin-left: auto; }
+.bubble small { display: block; margin-top: 4px; font-size: 10px; text-transform: uppercase; color: var(--muted); }
+.small-note { font-size: 12px; margin: 6px 0 0; }
+
+.convo .tag.lang-sw { background: #fff1d8; color: #946114; }
+.convo .tag.lang-en { background: #e2f4ed; color: #167657; }
+.lang-form { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; }
+.lang-form select { font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

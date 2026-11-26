@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Teachers · BakiShule{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div><p class="eyebrow">Staff</p><h1>Teachers</h1>
+    <p class="muted">USSD menus and SMS alerts use each teacher's language. "Not chosen yet" shows the language screen on their next dial.</p></div>
+</section>
+<section class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Name</th><th>Role</th><th>Phone</th><th>Classes</th><th>Language</th></tr></thead>
+      <tbody>
+      {% for teacher in teachers %}
+        <tr>
+          <td>{{ teacher.name }}</td>
+          <td>{{ teacher.role|replace("_", " ") }}</td>
+          <td>{{ teacher.phone }}</td>
+          <td>{{ teacher.classrooms|map(attribute="name")|sort|join(", ") }}</td>
+          <td>
+            <form method="post" action="/teachers/{{ teacher.id }}/language" class="lang-form">
+              <label class="visually-hidden" for="lang-{{ teacher.id }}">Language for {{ teacher.name }}</label>
+              <select id="lang-{{ teacher.id }}" name="language" onchange="this.form.submit()">
+                <option value="" {{ "selected" if not teacher.language }}>Not chosen yet</option>
+                {% for code, label in languages.items() %}<option value="{{ code }}" {{ "selected" if teacher.language == code }}>{{ label }}</option>{% endfor %}
+              </select>
+              <noscript><button class="button secondary">Save</button></noscript>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

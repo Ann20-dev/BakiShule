@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Parent messages · BakiShule{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div><p class="eyebrow">Live · updates every 3 seconds</p><h1>Live parent messages</h1>
+    <p class="muted">Incoming SMS/USSD commands and the automatic replies. PINs are masked.</p></div>
+</section>
+<section class="panel">
+  <div class="convo-list" hx-get="/partials/parent-queries?limit=50" hx-trigger="every 3s" hx-swap="innerHTML">
+    {% include "parent_queries_panel.html" %}
+  </div>
+</section>
+{% endblock %}

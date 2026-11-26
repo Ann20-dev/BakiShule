@@ -1,3 +1,9 @@
+import os
+
+os.environ.setdefault("ENABLE_SCHEDULER", "false")  # never run the weekly job during tests
+os.environ.setdefault("DRY_RUN", "true")
+os.environ["AI_CHAT_ENABLED"] = "false"  # tests never call the Claude API; AI tests patch it explicitly
+
 from collections.abc import Generator
 
 import pytest

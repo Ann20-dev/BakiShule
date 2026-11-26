@@ -5,6 +5,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import AttendanceRecord, Learner, ParentReply, RiskSnapshot
+from app.school_config import BEHAVIOUR_RISK
+from app.services.behaviour import recent_concern_count
 
 
 def risk_level(score: int) -> str:
@@ -123,6 +125,12 @@ def calculate_risk(db: Session, learner: Learner, as_of: date | None = None) -> 
     if latest_fees_reply:
         score += 15
         reasons.append("Parent reported fee difficulty (+15)")
+
+    concerns = recent_concern_count(db, learner.id, as_of)
+    if concerns >= BEHAVIOUR_RISK["threshold"]:
+        points = BEHAVIOUR_RISK["points"]
+        score += points
+        reasons.append(f"{concerns} behaviour concerns in the last {BEHAVIOUR_RISK['window_days']} days (+{points})")
 
     return min(score, 100), reasons
 

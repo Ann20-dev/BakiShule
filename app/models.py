@@ -27,6 +27,7 @@ class Teacher(Base):
     name: Mapped[str] = mapped_column(String(120))
     phone: Mapped[str] = mapped_column(String(24), unique=True, index=True)
     role: Mapped[str] = mapped_column(String(24), default="teacher")
+    language: Mapped[str | None] = mapped_column(String(2), nullable=True)  # en | sw, null until chosen
     classrooms: Mapped[list["ClassRoom"]] = relationship(back_populates="teacher")
 
 
@@ -61,6 +62,7 @@ class Learner(Base):
     replies: Mapped[list["ParentReply"]] = relationship(back_populates="learner", cascade="all, delete-orphan")
     risks: Mapped[list["RiskSnapshot"]] = relationship(back_populates="learner", cascade="all, delete-orphan")
     interventions: Mapped[list["Intervention"]] = relationship(back_populates="learner", cascade="all, delete-orphan")
+    behaviour_logs: Mapped[list["BehaviourLog"]] = relationship(back_populates="learner", cascade="all, delete-orphan")
     __table_args__ = (UniqueConstraint("classroom_id", "roll_number"),)
 
 
@@ -126,3 +128,55 @@ class DemoState(Base):
 
     key: Mapped[str] = mapped_column(String(40), primary_key=True)
     value: Mapped[str] = mapped_column(String(120))
+
+
+class BehaviourLog(Base):
+    """A behaviour note logged by a teacher over USSD. Codes live in app/school_config.py."""
+
+    __tablename__ = "behaviour_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    learner_id: Mapped[int] = mapped_column(ForeignKey("learners.id"), index=True)
+    teacher_id: Mapped[int | None] = mapped_column(ForeignKey("teachers.id"), nullable=True)
+    code: Mapped[int] = mapped_column(Integer)
+    sentiment: Mapped[str] = mapped_column(String(10), index=True)  # positive | concern
+    subject: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    date: Mapped[date] = mapped_column(Date, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, index=True)
+    learner: Mapped[Learner] = relationship(back_populates="behaviour_logs")
+    teacher: Mapped[Teacher | None] = relationship()
+
+
+class GuardianAccount(Base):
+    """Per-phone guardian settings: hashed PIN, lockout state, preferred language."""
+
+    __tablename__ = "guardian_accounts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    phone: Mapped[str] = mapped_column(String(24), unique=True, index=True)
+    pin_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    pin_salt: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    failed_pin_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    language: Mapped[str | None] = mapped_column(String(2), nullable=True)  # en | sw, null until chosen
+
+
+class MessageLog(Base):
+    """One parent exchange (inbound command and/or automatic reply), shown live on the dashboard."""
+
+    __tablename__ = "message_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    phone: Mapped[str] = mapped_column(String(24), index=True)
+    channel: Mapped[str] = mapped_column(String(8), default="sms")  # sms | ussd
+    command: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    language: Mapped[str | None] = mapped_column(String(2), nullable=True)  # null = bilingual reply
+    inbound_text: Mapped[str | None] = mapped_column(Text, nullable=True)  # PINs are masked
+    reply_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(24), default="ok")
+    counted: Mapped[bool] = mapped_column(Boolean, default=False)  # counts toward the daily limit
+    learner_id: Mapped[int | None] = mapped_column(ForeignKey("learners.id"), nullable=True, index=True)
+    delivery_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    at_response: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, index=True)
+    learner: Mapped[Learner | None] = relationship()

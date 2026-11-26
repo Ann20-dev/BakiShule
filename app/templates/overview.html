@@ -30,6 +30,11 @@
     </div>
   </article>
 </section>
+<section class="panel">
+  <div class="panel-heading"><div><h2>Live parent messages</h2><p class="muted">Live SMS/USSD commands from parents and the automatic replies</p></div>
+    <a class="button secondary" href="/parent-queries">Open full view →</a></div>
+  <div class="convo-list" hx-get="/partials/parent-queries" hx-trigger="load, every 3s" hx-swap="innerHTML"></div>
+</section>
 {% if demo_mode %}
 <section class="panel demo-panel">
   <div class="panel-heading"><div><h2>Demo controls</h2><p class="muted">Only available while DEMO_MODE=true.</p></div><span class="badge watch">DEMO</span></div>
@@ -43,6 +48,8 @@
       </select>
       <button class="button primary">Run simulation</button>
     </form>
+    <form method="post" action="/demo/weekly-reports" onsubmit="return confirm('Send the weekly REPORT SMS to every guardian who has not opted out?')"><button class="button secondary">Send weekly reports now</button></form>
+    <form method="post" action="/demo/reset-language"><button class="button secondary">Reset language for demo guardian</button></form>
     <form method="post" action="/demo/reset" onsubmit="return confirm('Reset all local demo data?')"><button class="button danger">Reset demo data</button></form>
   </div>
 </section>

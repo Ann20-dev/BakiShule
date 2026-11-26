@@ -5,7 +5,9 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models import AttendanceRecord, ClassRoom, Intervention, Learner, ParentReply, RiskSnapshot, Teacher
+from app.messages import join_list, t, weekday_name
 from app.services.at_client import at_client
+from app.services.language import guardian_language, reply_language, teacher_language, translate_reason
 
 LEVEL_RANK = {"green": 0, "watch": 1, "at_risk": 2, "critical": 3}
 
@@ -59,6 +61,7 @@ def _log_send(
             **(metadata or {}),
             "recipient": recipient,
             "message": message,
+            "message_id": response.get("message_id"),
             "at_response": response,
         },
     )
@@ -67,7 +70,34 @@ def _log_send(
     return intervention
 
 
+def guardian_reply_language(db: Session, phone: str) -> str:
+    return reply_language(guardian_language(db, phone))
+
+
+def checkin_message(db: Session, learner: Learner, as_of: date) -> str:
+    """'Hatukumwona Amani Jumatatu na Jumanne. Kila kitu kiko sawa? ...' in the guardian's language."""
+    lang = guardian_reply_language(db, learner.guardian_phone)
+    streak = _absence_streak(db, learner, as_of)
+    if 1 <= len(streak) <= 3:
+        days = t("checkin_on_days", lang, days=join_list([weekday_name(d.weekday(), lang) for d in streak], lang))
+    else:
+        days = t("checkin_for_days", lang, count=max(len(streak), 1))
+    return t("checkin", lang, name=learner.name, days=days)
+
+
+def staff_alert_message(learner: Learner, snapshot: RiskSnapshot, reply: ParentReply | None, lang: str) -> str:
+    summary = "; ".join(translate_reason(reason, lang) for reason in snapshot.reasons[:2]) or t("reason_default", lang)
+    if reply:
+        summary += " " + t("alert_parent_reply", lang, text=reply.raw_text[:45])
+    return t("alert_at_risk", lang, name=learner.name, cls=learner.classroom.name, summary=summary)[:155]
+
+
 def _absence_days(db: Session, learner: Learner, as_of: date) -> int:
+    return len(_absence_streak(db, learner, as_of))
+
+
+def _absence_streak(db: Session, learner: Learner, as_of: date) -> list[date]:
+    """Dates of the current run of consecutive school-day absences, oldest first."""
     record = db.scalar(
         select(AttendanceRecord)
         .where(
@@ -78,7 +108,7 @@ def _absence_days(db: Session, learner: Learner, as_of: date) -> int:
         .limit(1)
     )
     if not record or record.present:
-        return 0
+        return []
     records = list(
         db.scalars(
             select(AttendanceRecord)
@@ -89,7 +119,7 @@ def _absence_days(db: Session, learner: Learner, as_of: date) -> int:
             .order_by(AttendanceRecord.date.desc())
         )
     )
-    days = 0
+    days: list[date] = []
     previous_date: date | None = None
     for item in records:
         if not item.present:
@@ -99,11 +129,11 @@ def _absence_days(db: Session, learner: Learner, as_of: date) -> int:
                     expected_previous += timedelta(days=1)
                 if expected_previous != previous_date:
                     break
-            days += 1
+            days.append(item.date)
             previous_date = item.date
         elif previous_date:
             break
-    return days
+    return sorted(days)
 
 
 def _send_reward_if_due(
@@ -181,7 +211,10 @@ def _send_reward_if_due(
         )
     )
     db.commit()
-    congrats = f"Congratulations {learner.name.split()[0]}! You completed 4 weeks of full attendance. KES {settings.airtime_reward_kes} airtime is yours."
+    congrats = t(
+        "reward_congrats", guardian_reply_language(db, learner.guardian_phone),
+        first=learner.name.split()[0], amount=settings.airtime_reward_kes,
+    )
     _log_send(db, learner, "airtime_reward", learner.guardian_phone, congrats, {"level": "reward"})
     return True
 
@@ -198,34 +231,27 @@ def maybe_escalate(
         if previous_rank < LEVEL_RANK["watch"] <= current_rank:
             level = "watch"
             if not learner.sms_opt_out and not _recent_duplicate(db, learner, "sms_checkin", level):
-                days = _absence_days(db, learner, snapshot.date)
-                if settings.default_language.lower() == "sw":
-                    message = f"Tumekukosa {learner.name} kwa siku {days}. Kila kitu sawa? Jibu 1 Mgonjwa, 2 Ada, 3 Nyingine."
-                else:
-                    message = f"We missed {learner.name} on {days} days. Is everything okay? Reply 1 Sick, 2 Fees, 3 Other."
+                message = checkin_message(db, learner, snapshot.date)
                 _log_send(db, learner, "sms_checkin", learner.guardian_phone, message, {"level": level})
         if previous_rank < LEVEL_RANK["at_risk"] <= current_rank:
             level = "at_risk"
             if not _recent_duplicate(db, learner, "staff_alert", level):
-                summary = "; ".join(snapshot.reasons[:2]) or "Attendance risk increased."
                 reply = db.scalar(
                     select(ParentReply)
                     .where(ParentReply.learner_id == learner.id)
                     .order_by(ParentReply.received_at.desc())
                     .limit(1)
                 )
-                if reply:
-                    summary += f" Parent reply: {reply.raw_text[:45]}"
-                recipients = {learner.classroom.teacher.phone}
+                recipients = {learner.classroom.teacher.phone: learner.classroom.teacher}
                 head_teachers = db.scalars(
                     select(Teacher).join(Teacher.classrooms).where(
                         Teacher.role == "head_teacher",
                         ClassRoom.school_id == learner.classroom.school_id,
                     )
                 )
-                recipients.update(teacher.phone for teacher in head_teachers)
-                message = f"At-risk: {learner.name} ({learner.classroom.name}). {summary}"[:155]
-                for recipient in recipients:
+                recipients.update({teacher.phone: teacher for teacher in head_teachers})
+                for recipient, teacher in recipients.items():
+                    message = staff_alert_message(learner, snapshot, reply, teacher_language(teacher))
                     _log_send(db, learner, "staff_alert", recipient, message, {"level": level})
         if previous_rank < LEVEL_RANK["critical"] <= current_rank:
             level = "critical"

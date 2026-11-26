@@ -1,0 +1,19 @@
+{% for row in rows %}{% set log = row.log %}
+<article class="convo">
+  <header>
+    <strong>{{ row.phone }}</strong>
+    {% if log.learner %}<span class="muted">· {{ log.learner.name }} ({{ log.learner.classroom.name }})</span>{% endif %}
+    <span class="tag">{{ log.channel|upper }}</span>
+    {% if log.command %}<span class="tag">{{ log.command|replace("_", " ")|upper }}</span>{% endif %}
+    <span class="tag lang-{{ log.language or 'both' }}" title="Reply language">{{ (log.language or "EN/SW")|upper }}</span>
+    <span class="badge {{ 'green' if log.status in ['ok', 'ok_combined', 'checkin', 'weekly_push'] else 'watch' if log.status in ['choose_child', 'pin_required', 'rate_limited', 'rate_limited_silent'] else 'critical' }}">{{ log.status|replace("_", " ") }}</span>
+    <time>{{ log.created_at.strftime("%H:%M:%S") }}</time>
+  </header>
+  {% if log.inbound_text %}<p class="bubble in">{{ log.inbound_text }}</p>
+  {% elif log.status == "weekly_push" %}<p class="muted small-note">Scheduled weekly report</p>{% endif %}
+  {% if log.reply_text %}<p class="bubble out">{{ log.reply_text }}<small>{{ log.delivery_status or "" }}</small></p>
+  {% elif log.status != "weekly_push" %}<p class="muted small-note">No reply sent</p>{% endif %}
+</article>
+{% else %}
+<p class="muted">No parent messages yet. Text MENU or STATUS to the shortcode from the simulator.</p>
+{% endfor %}

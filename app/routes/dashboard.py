@@ -1,7 +1,7 @@
 from collections import Counter
-from datetime import timedelta
+from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
@@ -9,11 +9,18 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import Base, engine, get_db
-from app.models import AttendanceRecord, ClassRoom, DemoState, Intervention, Learner, ParentReply, RiskSnapshot, Teacher
+from app.models import (
+    AttendanceRecord, BehaviourLog, ClassRoom, DemoState, Intervention, Learner, MessageLog, ParentReply, RiskSnapshot,
+    Teacher,
+)
 from app.services.clock import demo_today
-from app.services.escalation import _log_send, maybe_escalate
+from app.messages import behaviour_label, normalize_language, t
+from app.services.escalation import _log_send, guardian_reply_language, maybe_escalate
 from app.services.payments import payment_service
 from app.services.risk import recompute_all, recompute_learner
+from app.services.language import guardian_language
+from app.services.parent_queries import get_account, reset_language
+from app.services.weekly_reports import run_weekly_reports_job
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -173,16 +180,95 @@ def learner_detail(learner_id: int, request: Request, db: Session = Depends(get_
             .limit(30)
         )
     )
+    behaviour = list(
+        db.scalars(
+            select(BehaviourLog)
+            .where(BehaviourLog.learner_id == learner_id)
+            .order_by(BehaviourLog.date.desc(), BehaviourLog.id.desc())
+            .limit(30)
+        )
+    )
+    timeline = [{"kind": "intervention", "at": item.created_at, "item": item} for item in interventions]
+    timeline += [
+        {
+            "kind": "behaviour",
+            "at": datetime.combine(log.date, log.created_at.time()),
+            "item": log,
+            "label": behaviour_label(log.code, "en"),
+        }
+        for log in behaviour
+    ]
+    timeline.sort(key=lambda entry: entry["at"], reverse=True)
     return templates.TemplateResponse(
         request=request,
         name="learner.html",
         context={
             "learner": learner,
+            "guardian_language": guardian_language(db, learner.guardian_phone),
+            "languages": LANGUAGE_LABELS,
             "attendance": attendance,
             "risks": risks,
             "replies": replies,
             "interventions": interventions,
+            "behaviour": behaviour,
+            "timeline": timeline[:40],
         },
+    )
+
+
+LANGUAGE_LABELS = {"en": "English", "sw": "Kiswahili"}
+
+
+@router.post("/guardians/language")
+def update_guardian_language(
+    phone: str = Form(...), language: str = Form(...), back: str = Form("/"), db: Session = Depends(get_db)
+):
+    account = get_account(db, phone, create=True)
+    account.language = language if language in LANGUAGE_LABELS else None
+    db.commit()
+    return RedirectResponse(back if back.startswith("/") else "/", status_code=303)
+
+
+@router.get("/teachers")
+def teachers_page(request: Request, db: Session = Depends(get_db)):
+    teachers = list(db.scalars(select(Teacher).order_by(Teacher.name)))
+    return templates.TemplateResponse(
+        request=request, name="teachers.html", context={"teachers": teachers, "languages": LANGUAGE_LABELS}
+    )
+
+
+@router.post("/teachers/{teacher_id}/language")
+def update_teacher_language(teacher_id: int, language: str = Form(...), db: Session = Depends(get_db)):
+    teacher = db.get(Teacher, teacher_id)
+    if not teacher:
+        raise HTTPException(status_code=404, detail="Teacher not found")
+    teacher.language = language if language in LANGUAGE_LABELS else None
+    db.commit()
+    return RedirectResponse("/teachers", status_code=303)
+
+
+def _mask_phone(phone: str) -> str:
+    return f"{phone[:6]}***{phone[-3:]}" if phone and len(phone) > 9 else phone
+
+
+def _parent_query_rows(db: Session, limit: int = 20) -> list[dict]:
+    logs = list(db.scalars(select(MessageLog).order_by(MessageLog.id.desc()).limit(limit)))
+    return [{"log": log, "phone": _mask_phone(log.phone)} for log in logs]
+
+
+@router.get("/parent-queries")
+def parent_queries_page(request: Request, db: Session = Depends(get_db)):
+    return templates.TemplateResponse(
+        request=request, name="parent_queries.html", context={"rows": _parent_query_rows(db, 50), "full": True}
+    )
+
+
+@router.get("/partials/parent-queries")
+def parent_queries_partial(request: Request, limit: int = 12, db: Session = Depends(get_db)):
+    return templates.TemplateResponse(
+        request=request,
+        name="parent_queries_panel.html",
+        context={"rows": _parent_query_rows(db, min(limit, 100))},
     )
 
 
@@ -269,21 +355,23 @@ def sponsor_pay(learner_id: int, db: Session = Depends(get_db)):
         )
     )
     db.commit()
-    recipients = {learner.guardian_phone, learner.classroom.teacher.phone}
-    head_teachers = db.scalars(
+    # Receipts go to the guardian, class teacher and head teacher(s), each in their own language.
+    recipients = {learner.guardian_phone: guardian_reply_language(db, learner.guardian_phone)}
+    staff = [learner.classroom.teacher, *db.scalars(
         select(Teacher).join(Teacher.classrooms).where(
             Teacher.role == "head_teacher",
             ClassRoom.school_id == learner.classroom.school_id,
         )
-    )
-    recipients.update(teacher.phone for teacher in head_teachers)
-    for phone in recipients:
+    )]
+    for teacher in staff:
+        recipients.setdefault(teacher.phone, normalize_language(teacher.language))
+    for phone, lang in recipients.items():
         _log_send(
             db,
             learner,
             "fee_payment",
             phone,
-            f"Fee support of KES 3,000 has been arranged for {learner.name}.",
+            t("sponsor_receipt", lang, amount="3,000", name=learner.name),
             {"payment_response": response},
         )
     for flag in db.scalars(
@@ -349,6 +437,21 @@ def simulate_streak(learner_id: int = Form(...), db: Session = Depends(get_db)):
     db.commit()
     maybe_escalate(db, learner, snapshot, previous_level)
     return RedirectResponse(f"/learners/{learner_id}", status_code=303)
+
+
+@router.post("/demo/weekly-reports")
+def send_weekly_reports_now(background_tasks: BackgroundTasks):
+    _require_demo_mode()
+    background_tasks.add_task(run_weekly_reports_job)
+    return RedirectResponse("/?weekly=sent", status_code=303)
+
+
+@router.post("/demo/reset-language")
+def reset_demo_guardian_language(db: Session = Depends(get_db)):
+    """Forget the demo guardian's language so the first-time language screen shows again."""
+    _require_demo_mode()
+    reset_language(db, settings.demo_parent_phone)
+    return RedirectResponse("/?language=reset", status_code=303)
 
 
 @router.post("/demo/reset")
